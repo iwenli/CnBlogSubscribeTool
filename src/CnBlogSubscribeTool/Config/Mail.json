@@ -1,11 +1,12 @@
 ﻿{
-  "Name": "CnBlogSubscribeTool",
-  "Address": "",
-  "Host": "",
-  "Port": 25,
-  "Password": "",
+  "Name": "wangwei",
+  "Address": "iwangwei0310@qq.com",
+  "Host": "smtp.qq.com",
+  "Port": 465,
+  "Password": "uaimczeubcjudgcj",
   "ReceiveList": [
-    "test1@test.com",
-    "test2@test.com"
+    "1596293347@qq.com"
+    ,"3040557365@qq.com"
+    ,"1335836014@qq.com"
   ]
 }

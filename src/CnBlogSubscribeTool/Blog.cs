@@ -1,7 +1,20 @@
 ﻿using System;
+using System.Collections.Generic;
 
 namespace CnBlogSubscribeTool
 {
+    public class BlogSource
+    {
+        public string Name { set; get; }
+        public string Path { set; get; }
+        public string FileName { set; get; }
+        public DateTime RecordTime { set; get; }
+        public string BlogDataUrl { set; get; }
+
+        public Dictionary<string, string> DicXPath { set; get;}
+        public List<Blog> PreviousBlogs { set; get; }
+    }
+
     public class Blog
     {
         /// <summary>

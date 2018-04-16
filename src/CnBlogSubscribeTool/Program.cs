@@ -19,27 +19,25 @@ namespace CnBlogSubscribeTool
 {
     class Program
     {
-        private static string BlogDataUrl= "https://www.cnblogs.com/";
         private static readonly Stopwatch Sw = new Stopwatch();
-        private static readonly List<Blog> PreviousBlogs = new List<Blog>();
+        private static readonly List<BlogSource> BlogSourceList = new List<BlogSource>();
         private static Logger _logger;
         private static Logger _sendLogger;
         private static MailConfig _mailConfig;
         private static string _baseDir;
+        private static string _baseDataPath;
         private static RetryPolicy _retryTwoTimesPolicy;
-        private static string _tmpFilePath;
-        
-        private static DateTime _recordTime;
         static void Main(string[] args)
         {
             Init();
-            
+
             //work thread
             new Thread(new ThreadStart(WorkStart)).Start();
 
-            Console.Title = "Cnblogs Article Archives Tool";
+            Console.Title = "Blogs Article Archives Tool";
             Console.WriteLine("Service Working...");
-            Console.ReadKey();
+            // SendMailTest();
+            Console.Read();
         }
 
         static void Init()
@@ -58,20 +56,63 @@ namespace CnBlogSubscribeTool
             //获取应用程序所在目录
             Type type = (new Program()).GetType();
             _baseDir = Path.GetDirectoryName(type.Assembly.Location);
-
-            //检查工作目录
-            if (!Directory.Exists(Path.Combine(_baseDir, "Blogs")))
+            //设置数据存储目录
+            _baseDataPath = Path.Combine(_baseDir, "Data");
+            if (!Directory.Exists(_baseDataPath))
             {
-                Directory.CreateDirectory(Path.Combine(_baseDir, "Blogs"));
+                Directory.CreateDirectory(_baseDataPath);
             }
 
-            //初始化记录时间
-            _recordTime=new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day, 9,0,0);
+            //配置抓取来源
+            //博客园
+            var source1 = new BlogSource()
+            {
+                Name = "博客园",
+                BlogDataUrl = "https://www.cnblogs.com/",
+                FileName = "cnblogs",
+                Path = "Blogs",
+                DicXPath = new Dictionary<string, string>(),
+                RecordTime = new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day, 9, 0, 0),
+                PreviousBlogs = new List<Blog>()
+            };
+            source1.DicXPath["item"] = "//div[@class='post_item_body']";
+            source1.DicXPath["title"] = "h3/a";
+            source1.DicXPath["summary"] = "p[@class='post_item_summary']";
+            source1.DicXPath["foot"] = "div[@class='post_item_foot']";
+            source1.DicXPath["author"] = "a";
+            BlogSourceList.Add(source1);
 
+            //产品经理
+            var source2 = new BlogSource()
+            {
+                Name = "人人都是产品经理",
+                BlogDataUrl = "http://www.woshipm.com/",
+                FileName = "woshipm",
+                Path = "WoshiPm",
+                DicXPath = new Dictionary<string, string>(),
+                RecordTime = new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day, 19, 0, 0),
+                PreviousBlogs = new List<Blog>()
+            };
+            source2.DicXPath["item"] = "//div[@class='postlist-item u-clearfix']";
+            source2.DicXPath["title"] = "div/h2/a";
+            source2.DicXPath["summary"] = "div/p[@class='des']";
+            source2.DicXPath["foot"] = "div/div[@class='stream-list-meta']";
+            source2.DicXPath["author"] = "span[@class='author']/a";
+            source2.DicXPath["date"] = "time";
+            BlogSourceList.Add(source2);
+
+            //检查工作目录
+            foreach (var source in BlogSourceList)
+            {
+                if (!Directory.Exists(Path.Combine(_baseDataPath, source.Path)))
+                {
+                    Directory.CreateDirectory(Path.Combine(_baseDataPath, source.Path));
+                }
+            }
 
             //初始化日志
             LogManager.Configuration = new XmlLoggingConfiguration(Path.Combine(_baseDir, "Config", "NLog.Config"));
-            _logger = LogManager.GetLogger("CnBlogSubscribeTool");
+            _logger = LogManager.GetLogger("Global");
             _sendLogger = LogManager.GetLogger("MailSend");
 
             //初始化邮件配置
@@ -80,25 +121,28 @@ namespace CnBlogSubscribeTool
                     File.ReadAllText(Path.Combine(_baseDir, "Config", "Mail.json")));
 
             //加载最后一次成功获取数据缓存
-
-            _tmpFilePath = Path.Combine(_baseDir, "Blogs", "cnblogs.tmp");
-            if (File.Exists(_tmpFilePath))
+            foreach (var source in BlogSourceList)
             {
-                try
+                var _tmpFilePath = Path.Combine(_baseDataPath, $"{source.FileName}.tmp");
+                if (File.Exists(_tmpFilePath))
                 {
-                    var data = File.ReadAllText(_tmpFilePath);
-                    var res = JsonConvert.DeserializeObject<List<Blog>>(data);
-                    if (res != null)
+                    try
                     {
-                        PreviousBlogs.AddRange(res);
+                        var data = File.ReadAllText(_tmpFilePath);
+                        var res = JsonConvert.DeserializeObject<List<Blog>>(data);
+                        if (res != null)
+                        {
+                            source.PreviousBlogs.AddRange(res);
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        _logger.Error("缓存数据加载失败，本次将弃用！详情:" + e.Message);
+                        File.Delete(_tmpFilePath);
                     }
                 }
-                catch (Exception e)
-                {
-                    _logger.Error("缓存数据加载失败，本次将弃用！详情:" + e.Message);
-                    File.Delete(_tmpFilePath);
-                }
             }
+
         }
 
         static void WorkStart()
@@ -107,13 +151,11 @@ namespace CnBlogSubscribeTool
             {
                 while (true)
                 {
-                    
                     _retryTwoTimesPolicy.Execute(Work);
-
                     //每五分钟执行一次
-                    Thread.Sleep(300000);
+                    Thread.Sleep(5 * 60 * 1000);
                 }
-                
+
             }
             catch (Exception e)
             {
@@ -121,11 +163,21 @@ namespace CnBlogSubscribeTool
 
             }
         }
-
         /// <summary>
-        /// 抓取
+        /// 抓取数据入口
         /// </summary>
         static void Work()
+        {
+
+            foreach (var source in BlogSourceList)
+            {
+                Work(source);
+            }
+        }
+        /// <summary>
+        /// 抓取博客园
+        /// </summary>
+        static void Work(BlogSource source)
         {
             try
             {
@@ -135,36 +187,37 @@ namespace CnBlogSubscribeTool
                 //重复数量统计
                 int repeatCount = 0;
 
-                string html = HttpUtil.GetString(BlogDataUrl);
+                string html = HttpUtil.GetString(source.BlogDataUrl);
 
                 List<Blog> blogs = new List<Blog>();
 
                 HtmlDocument doc = new HtmlDocument();
                 doc.LoadHtml(html);
-
                 //获取所有文章数据项
-                var itemBodys = doc.DocumentNode.SelectNodes("//div[@class='post_item_body']");
+                var itemBodys = doc.DocumentNode.SelectNodes(source.DicXPath["item"]);
 
                 foreach (var itemBody in itemBodys)
                 {
                     //标题元素
-                    var titleElem = itemBody.SelectSingleNode("h3/a");
+                    var titleElem = itemBody.SelectSingleNode(source.DicXPath["title"]);
                     //获取标题
                     var title = titleElem?.InnerText;
                     //获取url
                     var url = titleElem?.Attributes["href"]?.Value;
 
                     //摘要元素
-                    var summaryElem = itemBody.SelectSingleNode("p[@class='post_item_summary']");
+                    var summaryElem = itemBody.SelectSingleNode(source.DicXPath["summary"]);
                     //获取摘要
                     var summary = summaryElem?.InnerText.Replace("\r\n", "").Trim();
 
                     //数据项底部元素
-                    var footElem = itemBody.SelectSingleNode("div[@class='post_item_foot']");
+                    var footElem = itemBody.SelectSingleNode(source.DicXPath["foot"]);
                     //获取作者
-                    var author = footElem?.SelectSingleNode("a")?.InnerText;
+                    var author = footElem?.SelectSingleNode(source.DicXPath["author"])?.InnerText;
                     //获取文章发布时间
-                    var publishTime = Regex.Match(footElem?.InnerText, "\\d+-\\d+-\\d+ \\d+:\\d+").Value;
+                    var publishTime = (source.Path == "WoshiPm") ?
+                    footElem?.SelectSingleNode(source.DicXPath["date"])?.InnerText :
+                    Regex.Match(footElem?.InnerText, "\\d+-\\d+-\\d+ \\d+:\\d+").Value;
 
                     //组装博客对象
                     Blog blog = new Blog()
@@ -176,25 +229,17 @@ namespace CnBlogSubscribeTool
                         PublishTime = DateTime.Parse(publishTime)
                     };
                     blogs.Add(blog);
-
-
-                    /*Console.WriteLine($"标题：{title}");
-                    Console.WriteLine($"网址：{url}");
-                    Console.WriteLine($"摘要：{summary}");
-                    Console.WriteLine($"作者：{author}");
-                    Console.WriteLine($"发布时间：{publishTime}");
-                    Console.WriteLine("--------------华丽的分割线---------------");*/
                 }
 
-                string blogFileName= $"cnblogs-{DateTime.Now:yyyy-MM-dd}.txt";
-                string blogFilePath = Path.Combine(_baseDir, "Blogs", blogFileName);
-                FileStream fs=new FileStream(blogFilePath, FileMode.Append,FileAccess.Write);
+                string blogFileName = $"{source.FileName}-{DateTime.Now:yyyy-MM-dd}.txt";
+                string blogFilePath = Path.Combine(_baseDataPath, source.Path, blogFileName);
+                FileStream fs = new FileStream(blogFilePath, FileMode.Append, FileAccess.Write);
 
-                StreamWriter sw=new StreamWriter(fs,Encoding.UTF8);
+                StreamWriter sw = new StreamWriter(fs, Encoding.UTF8);
                 //去重
                 foreach (var blog in blogs)
                 {
-                    if (PreviousBlogs.Any(b => b.Url == blog.Url))
+                    if (source.PreviousBlogs.Any(b => b.Url == blog.Url))
                     {
                         repeatCount++;
                     }
@@ -207,37 +252,38 @@ namespace CnBlogSubscribeTool
                         sw.WriteLine($"发布时间：{blog.PublishTime:yyyy-MM-dd HH:mm}");
                         sw.WriteLine("--------------华丽的分割线---------------");
                     }
-                    
+
                 }
                 sw.Close();
                 fs.Close();
 
                 //清除上一次抓取数据记录
-                PreviousBlogs.Clear();
+                source.PreviousBlogs.Clear();
                 //加入本次抓取记录
-                PreviousBlogs.AddRange(blogs);
+                source.PreviousBlogs.AddRange(blogs);
 
                 //持久化本次抓取数据到文本 以便于异常退出恢复之后不出现重复数据
+                var _tmpFilePath = Path.Combine(_baseDataPath, $"{source.FileName}.tmp");
                 File.WriteAllText(_tmpFilePath, JsonConvert.SerializeObject(blogs));
 
                 Sw.Stop();
 
                 //统计信息
-
-                _logger.Info($"Get data success,Time:{Sw.ElapsedMilliseconds}ms,Data Count:{blogs.Count},Repeat:{repeatCount},Effective:{blogs.Count - repeatCount}");
+                _logger.Info($"Get {source.Name} data success,Time:{Sw.ElapsedMilliseconds}ms,Data Count:{blogs.Count},Repeat:{repeatCount},Effective:{blogs.Count - repeatCount}");
 
                 //发送邮件
-                if ((DateTime.Now - _recordTime).TotalHours >= 24)
+                if ((DateTime.Now - source.RecordTime).TotalHours >= 24)
                 {
-                    _sendLogger.Info($"准备发送邮件，记录时间:{_recordTime:yyyy-MM-dd HH:mm:ss}");
-                    SendMail();
-                    _recordTime= new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day, 9, 0, 0);
-                    _sendLogger.Info($"记录时间已更新:{_recordTime:yyyy-MM-dd HH:mm:ss}");
+                    _sendLogger.Info($"准备发送{source.Name}聚合邮件，记录时间:{source.RecordTime:yyyy-MM-dd HH:mm:ss}");
+                    SendMail(source);
+                    source.RecordTime = source.RecordTime.AddDays(1);
+                    _sendLogger.Info($"{source.Name}记录时间已更新:{source.RecordTime:yyyy-MM-dd HH:mm:ss}");
                 }
-                
+
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                System.Console.WriteLine(ex.Message);
                 throw;
             }
             finally
@@ -249,14 +295,14 @@ namespace CnBlogSubscribeTool
         /// <summary>
         /// 发送邮件
         /// </summary>
-        static void SendMail()
+        static void SendMail(BlogSource source)
         {
-            string blogFileName = $"cnblogs-{_recordTime:yyyy-MM-dd}.txt";
-            string blogFilePath = Path.Combine(_baseDir, "Blogs", blogFileName);
+            string blogFileName = $"{source.FileName}-{source.RecordTime:yyyy-MM-dd}.txt";
+            string blogFilePath = Path.Combine(_baseDataPath, source.Path, blogFileName);
 
             if (!File.Exists(blogFilePath))
             {
-                _sendLogger.Error("未发现文件记录，无法发送邮件，所需文件名："+blogFileName);
+                _sendLogger.Error("未发现文件记录，无法发送邮件，所需文件名：" + blogFileName);
                 return;
             }
             //邮件正文
@@ -274,8 +320,8 @@ namespace CnBlogSubscribeTool
             string blogFileContent = File.ReadAllText(blogFilePath);
 
             //发送邮件
-            MailUtil.SendMail(_mailConfig,_mailConfig.ReceiveList, "CnBlogSubscribeTool",
-                $"博客园首页文章聚合-{_recordTime:yyyy-MM-dd}", mailContent, Encoding.UTF8.GetBytes(blogFileContent),
+            MailUtil.SendMail(_mailConfig, _mailConfig.ReceiveList, "王薇",
+                $"{source.Name}首页文章聚合-{source.RecordTime:yyyy-MM-dd}", mailContent, Encoding.UTF8.GetBytes(blogFileContent),
                 blogFileName);
 
             _sendLogger.Info($"{blogFileName},文件已发送");

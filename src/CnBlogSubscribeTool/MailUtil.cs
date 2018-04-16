@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using CnBlogSubscribeTool.Config;
 using MailKit.Net.Smtp;
 using MimeKit;
@@ -10,13 +11,13 @@ namespace CnBlogSubscribeTool
     /// </summary>
     public class MailUtil
     {
-        private static bool SendMail(MimeMessage mailMessage,MailConfig config)
+        private static bool SendMail(MimeMessage mailMessage, MailConfig config)
         {
             try
             {
                 var smtpClient = new SmtpClient();
                 smtpClient.Timeout = 10 * 1000;   //设置超时时间
-                smtpClient.Connect(config.Host, config.Port, MailKit.Security.SecureSocketOptions.None);//连接到远程smtp服务器
+                smtpClient.Connect(config.Host, config.Port, true);//连接到远程smtp服务器
                 smtpClient.Authenticate(config.Address, config.Password);
                 smtpClient.Send(mailMessage);//发送邮件
                 smtpClient.Disconnect(true);
@@ -27,7 +28,6 @@ namespace CnBlogSubscribeTool
             {
                 throw;
             }
-
         }
 
         /// <summary>
@@ -41,13 +41,13 @@ namespace CnBlogSubscribeTool
         /// <param name="attachments">附件</param>
         /// <param name="fileName">附件名</param>
         /// <returns></returns>
-        public static bool SendMail(MailConfig config,List<string> receives, string sender, string subject, string body, byte[] attachments = null,string fileName="")
+        public static bool SendMail(MailConfig config, List<string> receives, string sender, string subject, string body, byte[] attachments = null, string fileName = "")
         {
             var fromMailAddress = new MailboxAddress(config.Name, config.Address);
-            
+
             var mailMessage = new MimeMessage();
             mailMessage.From.Add(fromMailAddress);
-            
+
             foreach (var add in receives)
             {
                 var toMailAddress = new MailboxAddress(add);
