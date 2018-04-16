@@ -35,6 +35,8 @@ namespace CnBlogSubscribeTool
             new Thread(new ThreadStart(WorkStart)).Start();
 
             Console.Title = "Blogs Article Archives Tool";
+            Console.BackgroundColor = ConsoleColor.Green;
+            Console.ForegroundColor =ConsoleColor.White;
             Console.WriteLine("Service Working...");
             // SendMailTest();
             Console.Read();
