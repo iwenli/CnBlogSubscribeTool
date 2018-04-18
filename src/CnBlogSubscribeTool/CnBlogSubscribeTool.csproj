@@ -18,6 +18,9 @@
     <None Update="Config\Mail.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Update="Config\MailHeader.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="Config\NLog.Config">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

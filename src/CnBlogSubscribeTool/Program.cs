@@ -61,16 +61,7 @@ namespace CnBlogSubscribeTool
             if (!Directory.Exists(_baseDataPath))
             {
                 Directory.CreateDirectory(_baseDataPath);
-            }
-
-            //检查工作目录
-            foreach (var source in BlogSourceList)
-            {
-                if (!Directory.Exists(Path.Combine(_baseDataPath, source.Path)))
-                {
-                    Directory.CreateDirectory(Path.Combine(_baseDataPath, source.Path));
-                }
-            }
+            } 
 
             //初始化日志
             LogManager.Configuration = new XmlLoggingConfiguration(Path.Combine(_baseDir, "Config", "NLog.Config"));
@@ -83,6 +74,14 @@ namespace CnBlogSubscribeTool
                     File.ReadAllText(Path.Combine(_baseDir, "Config", "Mail.json")));
             //加载数据 优先缓存
             LoadData();
+            //检查工作目录
+            foreach (var source in BlogSourceList)
+            {
+                if (!Directory.Exists(Path.Combine(_baseDataPath, source.Path)))
+                {
+                    Directory.CreateDirectory(Path.Combine(_baseDataPath, source.Path));
+                }
+            }
 
         }
         //持久化本次抓取数据到文本 以便于异常退出恢复之后不出现重复数据
@@ -263,7 +262,7 @@ namespace CnBlogSubscribeTool
 
                 }
                 sw.Close();
-                fs.Close();
+                fs.Close(); 
 
                 //清除上一次抓取数据记录
                 source.PreviousBlogs.Clear();
@@ -311,6 +310,12 @@ namespace CnBlogSubscribeTool
             }
             //邮件正文
             string mailContent = "";
+            var _tmpFilePath = Path.Combine(_baseDir,"Config","MailHeader.html") + "<br/>" + "<br/>";
+            if (File.Exists(_tmpFilePath))
+            {
+                mailContent += File.ReadAllText(_tmpFilePath);
+            }
+
             FileStream mailFs = new FileStream(blogFilePath, FileMode.Open, FileAccess.Read);
             StreamReader sr = new StreamReader(mailFs, Encoding.UTF8);
             while (!sr.EndOfStream)
