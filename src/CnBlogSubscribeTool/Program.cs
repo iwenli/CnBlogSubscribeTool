@@ -85,7 +85,12 @@ namespace CnBlogSubscribeTool
             LoadData();
 
         }
-
+        //持久化本次抓取数据到文本 以便于异常退出恢复之后不出现重复数据
+        private static void SaveData()
+        {
+            var _tmpFilePath = Path.Combine(_baseDataPath, $"cache.tmp");
+            File.WriteAllText(_tmpFilePath, JsonConvert.SerializeObject(BlogSourceList));
+        }
         //加载数据,首先从缓存中读取
         private static void LoadData()
         {
@@ -265,10 +270,6 @@ namespace CnBlogSubscribeTool
                 //加入本次抓取记录
                 source.PreviousBlogs.AddRange(blogs);
 
-                //持久化本次抓取数据到文本 以便于异常退出恢复之后不出现重复数据
-                var _tmpFilePath = Path.Combine(_baseDataPath, $"cache.tmp");
-                File.WriteAllText(_tmpFilePath, JsonConvert.SerializeObject(BlogSourceList));
-
                 Sw.Stop();
 
                 //统计信息
@@ -282,7 +283,7 @@ namespace CnBlogSubscribeTool
                     source.RecordTime = source.RecordTime.AddDays(1);
                     _sendLogger.Info($"{source.Name}记录时间已更新:{source.RecordTime:yyyy-MM-dd HH:mm:ss}");
                 }
-
+                SaveData();
             }
             catch (Exception ex)
             {
