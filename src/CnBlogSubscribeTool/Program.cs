@@ -35,8 +35,6 @@ namespace CnBlogSubscribeTool
             new Thread(new ThreadStart(WorkStart)).Start();
 
             Console.Title = "Blogs Article Archives Tool";
-            Console.BackgroundColor = ConsoleColor.Green;
-            Console.ForegroundColor =ConsoleColor.White;
             Console.WriteLine("Service Working...");
             // SendMailTest();
             Console.Read();
@@ -65,8 +63,54 @@ namespace CnBlogSubscribeTool
                 Directory.CreateDirectory(_baseDataPath);
             }
 
-            //配置抓取来源
-            //博客园
+            //检查工作目录
+            foreach (var source in BlogSourceList)
+            {
+                if (!Directory.Exists(Path.Combine(_baseDataPath, source.Path)))
+                {
+                    Directory.CreateDirectory(Path.Combine(_baseDataPath, source.Path));
+                }
+            }
+
+            //初始化日志
+            LogManager.Configuration = new XmlLoggingConfiguration(Path.Combine(_baseDir, "Config", "NLog.Config"));
+            _logger = LogManager.GetLogger("Global");
+            _sendLogger = LogManager.GetLogger("MailSend");
+
+            //初始化邮件配置
+            _mailConfig =
+                JsonConvert.DeserializeObject<MailConfig>(
+                    File.ReadAllText(Path.Combine(_baseDir, "Config", "Mail.json")));
+            //加载数据 优先缓存
+            LoadData();
+
+        }
+
+        //加载数据,首先从缓存中读取
+        private static void LoadData()
+        {
+            var _tmpFilePath = Path.Combine(_baseDataPath, $"cache.tmp");
+            if (File.Exists(_tmpFilePath))
+            {
+                try
+                {
+                    var data = File.ReadAllText(_tmpFilePath);
+                    var res = JsonConvert.DeserializeObject<List<BlogSource>>(data);
+                    if (res != null && res.Count > 0)
+                    {
+                        BlogSourceList.AddRange(res);
+                    }
+                }
+                catch (Exception e)
+                {
+                    _logger.Error("缓存数据加载失败，本次将弃用！详情:" + e.Message);
+                    File.Delete(_tmpFilePath);
+                }
+            }
+            if (BlogSourceList.Count > 0)
+            {
+                return;
+            }
             var source1 = new BlogSource()
             {
                 Name = "博客园",
@@ -92,7 +136,7 @@ namespace CnBlogSubscribeTool
                 FileName = "woshipm",
                 Path = "WoshiPm",
                 DicXPath = new Dictionary<string, string>(),
-                RecordTime = new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day, 19, 0, 0),
+                RecordTime = new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day, 17, 0, 0),
                 PreviousBlogs = new List<Blog>()
             };
             source2.DicXPath["item"] = "//div[@class='postlist-item u-clearfix']";
@@ -102,49 +146,6 @@ namespace CnBlogSubscribeTool
             source2.DicXPath["author"] = "span[@class='author']/a";
             source2.DicXPath["date"] = "time";
             BlogSourceList.Add(source2);
-
-            //检查工作目录
-            foreach (var source in BlogSourceList)
-            {
-                if (!Directory.Exists(Path.Combine(_baseDataPath, source.Path)))
-                {
-                    Directory.CreateDirectory(Path.Combine(_baseDataPath, source.Path));
-                }
-            }
-
-            //初始化日志
-            LogManager.Configuration = new XmlLoggingConfiguration(Path.Combine(_baseDir, "Config", "NLog.Config"));
-            _logger = LogManager.GetLogger("Global");
-            _sendLogger = LogManager.GetLogger("MailSend");
-
-            //初始化邮件配置
-            _mailConfig =
-                JsonConvert.DeserializeObject<MailConfig>(
-                    File.ReadAllText(Path.Combine(_baseDir, "Config", "Mail.json")));
-
-            //加载最后一次成功获取数据缓存
-            foreach (var source in BlogSourceList)
-            {
-                var _tmpFilePath = Path.Combine(_baseDataPath, $"{source.FileName}.tmp");
-                if (File.Exists(_tmpFilePath))
-                {
-                    try
-                    {
-                        var data = File.ReadAllText(_tmpFilePath);
-                        var res = JsonConvert.DeserializeObject<List<Blog>>(data);
-                        if (res != null)
-                        {
-                            source.PreviousBlogs.AddRange(res);
-                        }
-                    }
-                    catch (Exception e)
-                    {
-                        _logger.Error("缓存数据加载失败，本次将弃用！详情:" + e.Message);
-                        File.Delete(_tmpFilePath);
-                    }
-                }
-            }
-
         }
 
         static void WorkStart()
@@ -265,8 +266,8 @@ namespace CnBlogSubscribeTool
                 source.PreviousBlogs.AddRange(blogs);
 
                 //持久化本次抓取数据到文本 以便于异常退出恢复之后不出现重复数据
-                var _tmpFilePath = Path.Combine(_baseDataPath, $"{source.FileName}.tmp");
-                File.WriteAllText(_tmpFilePath, JsonConvert.SerializeObject(blogs));
+                var _tmpFilePath = Path.Combine(_baseDataPath, $"cache.tmp");
+                File.WriteAllText(_tmpFilePath, JsonConvert.SerializeObject(BlogSourceList));
 
                 Sw.Stop();
 
